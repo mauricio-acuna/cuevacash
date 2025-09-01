@@ -1,0 +1,240 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cuevacash-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cuevacash
+      POSTGRES_USER: cuevacash
+      POSTGRES_PASSWORD: cuevacash123
+      POSTGRES_MULTIPLE_DATABASES: cuevacash_users,cuevacash_loans,cuevacash_exchange,cuevacash_routes,cuevacash_reports
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - cuevacash-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: cuevacash-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cuevacash-network
+    command: redis-server --appendonly yes --requirepass redis123
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: cuevacash-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: cuevacash
+      RABBITMQ_DEFAULT_PASS: rabbitmq123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - cuevacash-network
+
+  # User Service
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    container_name: cuevacash-user-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DATABASE_URL: jdbc:postgresql://postgres:5432/cuevacash_users
+      DATABASE_USERNAME: cuevacash
+      DATABASE_PASSWORD: cuevacash123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: cuevacash
+      RABBITMQ_PASSWORD: rabbitmq123
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - cuevacash-network
+
+  # Loan Service
+  loan-service:
+    build:
+      context: ./backend/loan-service
+      dockerfile: Dockerfile
+    container_name: cuevacash-loan-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DATABASE_URL: jdbc:postgresql://postgres:5432/cuevacash_loans
+      DATABASE_USERNAME: cuevacash
+      DATABASE_PASSWORD: cuevacash123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: cuevacash
+      RABBITMQ_PASSWORD: rabbitmq123
+      USER_SERVICE_URL: http://user-service:8080
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - user-service
+    networks:
+      - cuevacash-network
+
+  # Exchange Service
+  exchange-service:
+    build:
+      context: ./backend/exchange-service
+      dockerfile: Dockerfile
+    container_name: cuevacash-exchange-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DATABASE_URL: jdbc:postgresql://postgres:5432/cuevacash_exchange
+      DATABASE_USERNAME: cuevacash
+      DATABASE_PASSWORD: cuevacash123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: cuevacash
+      RABBITMQ_PASSWORD: rabbitmq123
+      USER_SERVICE_URL: http://user-service:8080
+    ports:
+      - "8083:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - user-service
+    networks:
+      - cuevacash-network
+
+  # Route Service
+  route-service:
+    build:
+      context: ./backend/route-service
+      dockerfile: Dockerfile
+    container_name: cuevacash-route-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DATABASE_URL: jdbc:postgresql://postgres:5432/cuevacash_routes
+      DATABASE_USERNAME: cuevacash
+      DATABASE_PASSWORD: cuevacash123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: cuevacash
+      RABBITMQ_PASSWORD: rabbitmq123
+      USER_SERVICE_URL: http://user-service:8080
+    ports:
+      - "8084:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - user-service
+    networks:
+      - cuevacash-network
+
+  # API Gateway (Nginx)
+  api-gateway:
+    image: nginx:alpine
+    container_name: cuevacash-api-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - user-service
+      - loan-service
+      - exchange-service
+      - route-service
+    networks:
+      - cuevacash-network
+
+  # Frontend Angular App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cuevacash-frontend
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    networks:
+      - cuevacash-network
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cuevacash-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - cuevacash-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cuevacash-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - cuevacash-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  cuevacash-network:
+    driver: bridge

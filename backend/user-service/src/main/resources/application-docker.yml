@@ -1,0 +1,39 @@
+# Configuration for Docker environment
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/cuevacash_users}
+    username: ${DATABASE_USERNAME:cuevacash}
+    password: ${DATABASE_PASSWORD:cuevacash123}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis123}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:cuevacash}
+    password: ${RABBITMQ_PASSWORD:rabbitmq123}
+
+# Server Configuration
+server:
+  port: 8080
+
+# Logging Configuration for Docker
+logging:
+  level:
+    com.cuevacash.userservice: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"
+
+# External Service URLs
+cuevacash:
+  services:
+    loan-service: ${LOAN_SERVICE_URL:http://loan-service:8080}
+    exchange-service: ${EXCHANGE_SERVICE_URL:http://exchange-service:8080}
+    route-service: ${ROUTE_SERVICE_URL:http://route-service:8080}
